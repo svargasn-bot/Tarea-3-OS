@@ -2,68 +2,39 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
-#include <ncurses.h>
 #include <unistd.h>
+#include <ncurses.h>
 #include "supermercado.hpp"
+#include "interfaz.hpp"
 
 using namespace std;
 
-// Función para inicializar ncurses
-void inicializarNcurses() {
-    initscr();     
-    noecho();      
-    curs_set(0);    
-    keypad(stdscr, TRUE);
-}
-
-// =========================================================
-// DIBUJAR CAJA: Genera la interfaz visual de las casillas
-// =========================================================
-void dibujarCajaVisual(int y_base, CajaRegistradora* caja) {
-    mvprintw(y_base, 5, "==================================================");
-    mvprintw(y_base + 1, 5, " CAJA REGISTRADORA %d ", caja->id);
-    mvprintw(y_base + 2, 5, "==================================================");
-    
-    mvprintw(y_base + 4, 5, "Cinta Transportadora (Capacidad: %d)", caja->capacidad_correa);
-    
-    // Bloqueamos brevemente para leer la cinta sin que el cajero la mueva a la mitad
-    pthread_mutex_lock(&caja->mutex_correa);
-    
-    int start_x = 5;
-    for (int i = 0; i < caja->capacidad_correa; i++) {
-        if (caja->correa[i] == 0) {
-            // Espacio vacío
-            mvprintw(y_base + 6, start_x + (i * 6), "[   ]"); 
-        } else {
-            // Espacio ocupado por un producto (mostramos el número de producto)
-            mvprintw(y_base + 6, start_x + (i * 6), "[%3d]", caja->correa[i]);
-        }
-    }
-    
-    pthread_mutex_unlock(&caja->mutex_correa);
-
-    mvprintw(y_base + 8, 5, "Total de productos procesados: %d", caja->total_cobrados);
-}
-
-// =========================================================
-// FUNCIÓN PRINCIPAL
-// =========================================================
 int main() {
     srand(time(NULL));
     inicializarNcurses();
 
-    // Configuración inicial según las restricciones de la tarea
-    int num_cajas = 2; // Puede ser 1 o 2
-    int capacidad_cinta = 10; // Rango permitido: 5 a 15
-    int clientes_por_caja = 3; // Máximo 10
-    int productos_por_cliente = 15; // Máximo 20
+    // Parámetros de la simulación que serán configurados en el menú interactivo
+    int num_cajas;
+    int capacidad_cinta;
+    int clientes_por_caja;
+    int productos_por_cliente;
+    int vel_caja1;
+    int vel_caja2;
 
+    // Lanzar el menú interactivo. Si retorna false, el usuario canceló la ejecución (Q)
+    if (!mostrarMenuConfiguracion(num_cajas, capacidad_cinta, clientes_por_caja, productos_por_cliente, vel_caja1, vel_caja2)) {
+        finalizarNcurses();
+        return 0;
+    }
+
+    // Inicializar estructuras de datos basadas en los parámetros configurados
     vector<CajaRegistradora> cajas(num_cajas);
     vector<pthread_t> hebras_cajeros(num_cajas);
     
-    // Almacenamos las hebras de los clientes y sus datos
     vector<pthread_t> hebras_clientes;
     vector<DatosCliente> datos_clientes;
+    // Reservamos memoria para evitar la invalidación de punteros (prevenir SIGSEGV)
+    datos_clientes.reserve(num_cajas * clientes_por_caja);
 
     // 1. Inicializar las cajas y lanzar los cajeros (Consumidores)
     for (int i = 0; i < num_cajas; i++) {
@@ -74,6 +45,23 @@ int main() {
         cajas[i].indice_salida = 0;
         cajas[i].caja_abierta = true;
         cajas[i].total_cobrados = 0;
+
+        // Configuración de tiempos de cobro basados en la velocidad elegida
+        int vel_seleccionada = (i == 0 ? vel_caja1 : vel_caja2);
+        if (vel_seleccionada == 1) { // Rápido
+            cajas[i].tiempo_min_cajero = 50000;
+            cajas[i].tiempo_max_cajero = 180000;
+        } else if (vel_seleccionada == 2) { // Normal
+            cajas[i].tiempo_min_cajero = 150000;
+            cajas[i].tiempo_max_cajero = 380000;
+        } else { // Lento
+            cajas[i].tiempo_min_cajero = 300000;
+            cajas[i].tiempo_max_cajero = 600000;
+        }
+
+        // Tiempos que tardan los clientes en esta caja
+        cajas[i].tiempo_min_cliente = 100000;
+        cajas[i].tiempo_max_cliente = 300000;
 
         sem_init(&cajas[i].sem_espacios_vacios, 0, capacidad_cinta);
         sem_init(&cajas[i].sem_productos_listos, 0, 0);
@@ -95,7 +83,6 @@ int main() {
     }
 
     // 3. Bucle visual de la Interfaz (Actualiza la pantalla)
-    // Se ejecuta mientras queden clientes poniendo productos
     bool simulacion_activa = true;
     while (simulacion_activa) {
         clear();
@@ -103,22 +90,21 @@ int main() {
         mvprintw(1, 5, "SIMULACION DE SUPERMERCADO - PRODUCTOR / CONSUMIDOR");
         
         for (int i = 0; i < num_cajas; i++) {
-            // Dibuja la caja 1 arriba y la caja 2 más abajo
             dibujarCajaVisual(4 + (i * 12), &cajas[i]);
         }
         
         refresh();
         
-        // Condición simple de término: Si ya se cobraron todos los productos de todos los clientes
-        int total_esperado = clientes_por_caja * productos_por_cliente;
+        // Condición de término: Si ya se cobraron todos los productos de todos los clientes
         simulacion_activa = false;
         for (int i = 0; i < num_cajas; i++) {
-            if (cajas[i].total_cobrados < total_esperado) {
+            int total_esperado_por_caja = clientes_por_caja * productos_por_cliente;
+            if (cajas[i].total_cobrados < total_esperado_por_caja) {
                 simulacion_activa = true;
             }
         }
         
-        usleep(50000); // Tasa de refresco de la pantalla
+        usleep(50000); // Tasa de refresco de la pantalla (50ms)
     }
 
     // 4. Limpieza y Cierre Seguro
@@ -130,7 +116,7 @@ int main() {
     // Cerramos las cajas y avisamos a los cajeros para que salgan de su bucle
     for (int i = 0; i < num_cajas; i++) {
         cajas[i].caja_abierta = false;
-        sem_post(&cajas[i].sem_productos_listos); // Despierta al cajero si se quedó esperando
+        sem_post(&cajas[i].sem_productos_listos); // Despierta al cajero si quedó esperando
         pthread_join(hebras_cajeros[i], NULL);
         
         // Destruir semáforos y mutex
@@ -140,14 +126,8 @@ int main() {
     }
 
     // Pantalla Final
-    clear();
-    mvprintw(5, 10, "===========================================");
-    mvprintw(6, 10, "   LA SIMULACION HA TERMINADO CON EXITO    ");
-    mvprintw(7, 10, "===========================================");
-    mvprintw(9, 10, "Presiona cualquier tecla para salir...");
-    refresh();
-    getch();
+    mostrarPantallaFinal();
+    finalizarNcurses();
 
-    endwin();
     return 0;
 }

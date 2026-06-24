@@ -20,6 +20,12 @@ struct CajaRegistradora {
     
     bool caja_abierta;
     int total_cobrados; // NUEVO: Para la interfaz visual
+
+    // Tiempos de procesamiento específicos (en microsegundos)
+    int tiempo_min_cajero;
+    int tiempo_max_cajero;
+    int tiempo_min_cliente;
+    int tiempo_max_cliente;
 };
 
 // Datos que se le pasan al hilo del Cliente (Productor)

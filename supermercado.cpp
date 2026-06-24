@@ -31,7 +31,7 @@ void* funcionCliente_Productor(void* arg) {
         sem_post(&caja->sem_productos_listos);
         
         // Simula el tiempo que tarda en sacar el producto del carro
-        usleep(generarAleatorio(100000, 300000)); 
+        usleep(generarAleatorio(caja->tiempo_min_cliente, caja->tiempo_max_cliente)); 
     }
     return NULL;
 }
@@ -69,7 +69,7 @@ void* funcionCajero_Consumidor(void* arg) {
         sem_post(&caja->sem_espacios_vacios);
         
         // Simula el tiempo que tarda el cajero en escanear el producto
-        usleep(generarAleatorio(150000, 400000)); 
+        usleep(generarAleatorio(caja->tiempo_min_cajero, caja->tiempo_max_cajero)); 
     }
     return NULL;
 }
