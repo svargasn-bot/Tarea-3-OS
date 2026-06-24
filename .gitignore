@@ -1,0 +1,9 @@
+# Binarios y ejecutables
+*.exe
+tarea3
+*.o
+*.out
+
+# Directorios de configuracion de IDEs
+.vscode/
+.idea/
